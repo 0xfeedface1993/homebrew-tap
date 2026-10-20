@@ -1,0 +1,58 @@
+# 每次推送和 PR：检查 cask 写法，联网审核（下载 GitHub Release 附件并核对 sha256），再真的装一遍、卸一遍。
+name: casks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  casks:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Style
+        run: brew style "$TAP_NAME"
+        env:
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+
+      - name: Audit
+        run: brew audit --cask --strict --online --tap="$TAP_NAME"
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+
+      - name: Livecheck
+        run: brew livecheck --cask --tap="$TAP_NAME"
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+
+      - name: Install and uninstall
+        run: |
+          brew install --cask "$TAP_NAME/cherry-cli"
+          cherry --version
+          brew install --cask "$TAP_NAME/cherry-utility"
+          test -d /Applications/CherryUtility.app
+          brew uninstall --cask "$TAP_NAME/cherry-utility" "$TAP_NAME/cherry-cli"
+          test ! -e /Applications/CherryUtility.app
+        env:
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
